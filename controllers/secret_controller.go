@@ -1,0 +1,179 @@
+// Copyright 2024 SAP SE
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package controllers
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/go-logr/logr"
+	authenticationv1 "k8s.io/api/authentication/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+// to be ovverriden in tests
+var Now = time.Now
+
+const AutoprovisonAnnotationKey = "metal.ironcore.dev/autoprovision"
+
+type SecretReconciler struct {
+	MetalClient  client.Client
+	GardenClient client.Client
+	Log          logr.Logger
+	ConfigPath   string
+}
+
+func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := r.Log.WithValues("name", req.Name, "namespace", req.Namespace)
+	config, err := LoadConfig(r.ConfigPath)
+	if err != nil {
+		log.Error(err, "unable to load config")
+		return ctrl.Result{}, err
+	}
+	var secret corev1.Secret
+	if err := r.GardenClient.Get(ctx, req.NamespacedName, &secret); err != nil {
+		log.Error(err, "unable to fetch Secret")
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	unmodifiedSecret := secret.DeepCopy()
+	autoprovisionValue, ok := secret.Annotations[AutoprovisonAnnotationKey]
+	if !ok {
+		log.Info("skkipping secret without autoprovision annotation")
+		return ctrl.Result{}, nil
+	}
+	target, err := parseAutoprovisionValue(autoprovisionValue)
+	if err != nil {
+		log.Info("skipping secret with invalid autoprovision annotation", "error", err)
+		return ctrl.Result{}, nil
+	}
+	if target.identity != config.Identity {
+		log.Info("skipping secret with different identity", "expected", config.Identity, "actual", target.identity)
+		return ctrl.Result{}, nil
+	}
+	if secret.Data == nil {
+		secret.Data = make(map[string][]byte)
+	}
+	token, err := r.ensureToken(ctx, ensureTokenParams{
+		log:              log,
+		serviceAccount:   types.NamespacedName{Name: config.ServiceAccountName, Namespace: config.ServiceAccountNamespace},
+		expirationSecods: config.ExpirationSeconds,
+		currentToken:     string(secret.Data["token"]),
+	})
+	if err != nil {
+		log.Error(err, "unable to ensure token")
+		return ctrl.Result{}, err
+	}
+	secret.Data["token"] = []byte(token)
+	secret.Data["username"] = []byte(config.ServiceAccountName)
+	secret.Data["namespace"] = []byte(target.namespace)
+	err = r.GardenClient.Patch(ctx, &secret, client.MergeFrom(unmodifiedSecret))
+	if err != nil {
+		log.Error(err, "unable to patch Secret")
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
+}
+
+type target struct {
+	identity  string
+	namespace string
+}
+
+func parseAutoprovisionValue(value string) (target, error) {
+	parts := strings.Split(value, "/")
+	if len(parts) != 2 {
+		return target{}, fmt.Errorf("invalid autoprovision annotation value: %s", value)
+	}
+	return target{identity: parts[0], namespace: parts[1]}, nil
+}
+
+type ensureTokenParams struct {
+	log              logr.Logger
+	serviceAccount   types.NamespacedName
+	expirationSecods int64
+	currentToken     string
+}
+
+func (r *SecretReconciler) ensureToken(ctx context.Context, params ensureTokenParams) (string, error) {
+	needsToken, err := r.needsToken(ctx, params.log, params.currentToken)
+	if err != nil {
+		return "", fmt.Errorf("failed to check if token is needed: %w", err)
+	}
+	if !needsToken {
+		return params.currentToken, nil
+	}
+	var account corev1.ServiceAccount
+	account.Name = params.serviceAccount.Name
+	account.Namespace = params.serviceAccount.Namespace
+	var tokenRequest authenticationv1.TokenRequest
+	tokenRequest.Spec.ExpirationSeconds = &params.expirationSecods
+	if err := r.MetalClient.SubResource("token").Create(ctx, &account, &tokenRequest); err != nil {
+		return "", fmt.Errorf("failed to create token request: %w", err)
+	}
+	r.Log.Info("issued token")
+	return tokenRequest.Status.Token, nil
+}
+
+type jwtClaims struct {
+	Exp int64 `json:"exp"`
+	Iat int64 `json:"iat"`
+}
+
+func (r *SecretReconciler) needsToken(ctx context.Context, log logr.Logger, currentToken string) (bool, error) {
+	if currentToken == "" {
+		return true, nil
+	}
+	var tokenReview authenticationv1.TokenReview
+	tokenReview.Spec.Token = currentToken
+	if err := r.MetalClient.Create(ctx, &tokenReview); err != nil {
+		return false, fmt.Errorf("failed to create token review: %w", err)
+	}
+	if !tokenReview.Status.Authenticated {
+		return true, nil
+	}
+	parts := strings.Split(currentToken, ".")
+	encodedPayload := parts[1]
+
+	decodedPayload, err := base64.RawURLEncoding.DecodeString(encodedPayload)
+	if err != nil {
+		return false, fmt.Errorf("failed to decode payload: %w", err)
+	}
+
+	var claims jwtClaims
+	err = json.Unmarshal(decodedPayload, &claims)
+	if err != nil {
+		return false, fmt.Errorf("failed to unmarshal claims: %w", err)
+	}
+
+	iatTime := time.Unix(claims.Iat, 0)
+	expTime := time.Unix(claims.Exp, 0)
+	age := Now().Sub(iatTime)
+	lifetime := expTime.Sub(iatTime)
+	log.Info("token info", "age seconds", age.Seconds(), "lifetime seconds", lifetime.Seconds())
+	return age > lifetime/2, nil
+}
+
+func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&corev1.Secret{}).
+		Complete(r)
+}
