@@ -70,9 +70,8 @@ func main() {
 	}
 
 	mgr, err := ctrl.NewManager(gardenConfig, ctrl.Options{
-		Scheme:           scheme,
-		LeaderElection:   true,
-		LeaderElectionID: "runtime-extension-maintenance-controller",
+		Scheme:         scheme,
+		LeaderElection: false,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to setup manager")
@@ -83,7 +82,7 @@ func main() {
 	secretController := controllers.SecretReconciler{
 		MetalClient:  metalClient,
 		GardenClient: mgr.GetClient(),
-		Log:          ctrl.Log.WithName("controllers").WithName("Secret"),
+		Log:          ctrl.Log.WithName("controllers").WithName("secret"),
 		ConfigPath:   controllers.DefaultConfigPath,
 	}
 	if err = secretController.SetupWithManager(mgr); err != nil {
@@ -114,7 +113,7 @@ func getKubeconfigOrDie(kubecontext string) *rest.Config {
 func gardenClusterConfig(apiAddress string) (*rest.Config, error) {
 	const (
 		tokenFile  = "/var/run/garden/token" //nolint:gosec
-		rootCAFile = "/var/run/garden/ca.crt"
+		rootCAFile = "/var/run/garden/bundle.crt"
 	)
 
 	if apiAddress == "" {
