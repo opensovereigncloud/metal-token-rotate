@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -36,10 +38,11 @@ var Now = time.Now
 const AutoprovisonAnnotationKey = "metal.ironcore.dev/autoprovision"
 
 type SecretReconciler struct {
-	MetalClient  client.Client
-	GardenClient client.Client
-	Log          logr.Logger
-	ConfigPath   string
+	GardenClient        client.Client
+	LocalClient         client.Client
+	Log                 logr.Logger
+	ConfigPath          string
+	TargetKubeCfgSecret *types.NamespacedName
 }
 
 func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -54,6 +57,27 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		log.Error(err, "unable to fetch Secret")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+	metalClient := r.LocalClient
+	if r.TargetKubeCfgSecret != nil {
+		metalClient, err = makeTargetClient(ctx, r.LocalClient, *r.TargetKubeCfgSecret)
+		if err != nil {
+			log.Error(err, "failed to create metal cluster client")
+			return ctrl.Result{}, err
+		}
+	}
+	return r.reconcileInternal(ctx, &secret, ReconcileParams{
+		config:      &config,
+		metalClient: metalClient,
+	})
+}
+
+type ReconcileParams struct {
+	config      *Config
+	metalClient client.Client
+}
+
+func (r *SecretReconciler) reconcileInternal(ctx context.Context, secret *corev1.Secret, params ReconcileParams) (ctrl.Result, error) {
+	log := r.Log.WithValues("name", secret.Name, "namespace", secret.Namespace)
 	unmodifiedSecret := secret.DeepCopy()
 	autoprovisionValue, ok := secret.Annotations[AutoprovisonAnnotationKey]
 	if !ok {
@@ -65,17 +89,21 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		log.Info("skipping secret with invalid autoprovision annotation", "error", err)
 		return ctrl.Result{}, nil
 	}
-	if target.identity != config.Identity {
-		log.Info("skipping secret with different identity", "expected", config.Identity, "actual", target.identity)
+	if target.identity != params.config.Identity {
+		log.Info("skipping secret with different identity", "expected", params.config.Identity, "actual", target.identity)
 		return ctrl.Result{}, nil
 	}
 	if secret.Data == nil {
 		secret.Data = make(map[string][]byte)
 	}
 	token, err := r.ensureToken(ctx, ensureTokenParams{
-		log:              log,
-		serviceAccount:   types.NamespacedName{Name: config.ServiceAccountName, Namespace: config.ServiceAccountNamespace},
-		expirationSecods: config.ExpirationSeconds,
+		metalClient: params.metalClient,
+		log:         log,
+		serviceAccount: types.NamespacedName{
+			Name:      params.config.ServiceAccountName,
+			Namespace: params.config.ServiceAccountNamespace,
+		},
+		expirationSecods: params.config.ExpirationSeconds,
 		currentToken:     string(secret.Data["token"]),
 	})
 	if err != nil {
@@ -83,9 +111,9 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 	secret.Data["token"] = []byte(token)
-	secret.Data["username"] = []byte(config.ServiceAccountName)
+	secret.Data["username"] = []byte(params.config.ServiceAccountName)
 	secret.Data["namespace"] = []byte(target.namespace)
-	err = r.GardenClient.Patch(ctx, &secret, client.MergeFrom(unmodifiedSecret))
+	err = r.GardenClient.Patch(ctx, secret, client.MergeFrom(unmodifiedSecret))
 	if err != nil {
 		log.Error(err, "unable to patch Secret")
 		return ctrl.Result{}, err
@@ -107,6 +135,7 @@ func parseAutoprovisionValue(value string) (target, error) {
 }
 
 type ensureTokenParams struct {
+	metalClient      client.Client
 	log              logr.Logger
 	serviceAccount   types.NamespacedName
 	expirationSecods int64
@@ -114,7 +143,7 @@ type ensureTokenParams struct {
 }
 
 func (r *SecretReconciler) ensureToken(ctx context.Context, params ensureTokenParams) (string, error) {
-	needsToken, err := r.needsToken(ctx, params.log, params.currentToken)
+	needsToken, err := r.needsToken(ctx, params.log, params.currentToken, params.metalClient)
 	if err != nil {
 		return "", fmt.Errorf("failed to check if token is needed: %w", err)
 	}
@@ -126,7 +155,7 @@ func (r *SecretReconciler) ensureToken(ctx context.Context, params ensureTokenPa
 	account.Namespace = params.serviceAccount.Namespace
 	var tokenRequest authenticationv1.TokenRequest
 	tokenRequest.Spec.ExpirationSeconds = &params.expirationSecods
-	if err := r.MetalClient.SubResource("token").Create(ctx, &account, &tokenRequest); err != nil {
+	if err := params.metalClient.SubResource("token").Create(ctx, &account, &tokenRequest); err != nil {
 		return "", fmt.Errorf("failed to create token request: %w", err)
 	}
 	r.Log.Info("issued token")
@@ -138,13 +167,13 @@ type jwtClaims struct {
 	Iat int64 `json:"iat"`
 }
 
-func (r *SecretReconciler) needsToken(ctx context.Context, log logr.Logger, currentToken string) (bool, error) {
+func (r *SecretReconciler) needsToken(ctx context.Context, log logr.Logger, currentToken string, metalClient client.Client) (bool, error) {
 	if currentToken == "" {
 		return true, nil
 	}
 	var tokenReview authenticationv1.TokenReview
 	tokenReview.Spec.Token = currentToken
-	if err := r.MetalClient.Create(ctx, &tokenReview); err != nil {
+	if err := metalClient.Create(ctx, &tokenReview); err != nil {
 		return false, fmt.Errorf("failed to create token review: %w", err)
 	}
 	if !tokenReview.Status.Authenticated {
@@ -170,6 +199,23 @@ func (r *SecretReconciler) needsToken(ctx context.Context, log logr.Logger, curr
 	lifetime := expTime.Sub(iatTime)
 	log.Info("token info", "age seconds", age.Seconds(), "lifetime seconds", lifetime.Seconds())
 	return age > lifetime/2, nil
+}
+
+func makeTargetClient(ctx context.Context, cl client.Client, targetSecret types.NamespacedName) (client.Client, error) {
+	var secret corev1.Secret
+	err := cl.Get(ctx, targetSecret, &secret)
+	if err != nil {
+		return nil, err
+	}
+	configData, ok := secret.Data["kubeconfig"]
+	if !ok {
+		return nil, errors.New("did not find kubeconfig key in secret")
+	}
+	config, err := clientcmd.RESTConfigFromKubeConfig(configData)
+	if err != nil {
+		return nil, err
+	}
+	return client.New(config, client.Options{Scheme: cl.Scheme()})
 }
 
 func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {

@@ -92,7 +92,7 @@ var _ = BeforeSuite(func() {
 
 	configPath := "test.json"
 	reconciler := &controllers.SecretReconciler{
-		MetalClient:  metalClient,
+		LocalClient:  metalClient,
 		GardenClient: gardenClient,
 		Log:          GinkgoLogr,
 		ConfigPath:   configPath,
