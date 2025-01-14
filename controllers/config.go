@@ -21,7 +21,7 @@ import (
 	"os"
 )
 
-const DefaultConfigPath string = "/etc/metal-token-dealer/config.json"
+const DefaultConfigPath string = "/etc/metal-token-rotate/config.json"
 
 type Config struct {
 	ServiceAccountName      string `json:"serviceAccountName"`

@@ -1,10 +1,10 @@
 # Configuration file for <https://github.com/sapcc/go-makefile-maker>
 
 metadata:
-  url: https://github.com/ironcore-dev/metal-token-dealer
+  url: https://github.com/ironcore-dev/metal-token-rotate
 
 binaries:
-  - name:        metal-token-dealer
+  - name:        metal-token-rotate
     fromPackage: .
     installTo:   bin/
 

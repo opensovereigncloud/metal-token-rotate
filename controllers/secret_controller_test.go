@@ -24,7 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/ironcore-dev/metal-token-dealer/controllers"
+	"github.com/ironcore-dev/metal-token-rotate/controllers"
 )
 
 var _ = Describe("The secret controller", func() {

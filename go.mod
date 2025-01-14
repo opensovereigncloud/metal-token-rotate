@@ -1,4 +1,4 @@
-module github.com/ironcore-dev/metal-token-dealer
+module github.com/ironcore-dev/metal-token-rotate
 
 go 1.23.0
 

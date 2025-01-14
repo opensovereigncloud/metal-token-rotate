@@ -10,14 +10,14 @@ COPY go.sum go.sum
 RUN go mod download
 
 COPY ./ /workspace/
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on GOTOOLCHAIN=local go build -a -o metal-auth main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on GOTOOLCHAIN=local go build -a -o metal-token-rotate main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-LABEL source_repository="https://github.com/ironcore-dev/metal-token-dealer"
-COPY --from=builder /workspace/metal-auth .
+LABEL source_repository="https://github.com/ironcore-dev/metal-token-rotate"
+COPY --from=builder /workspace/metal-token-rotate .
 USER nonroot:nonroot
 
-ENTRYPOINT ["/metal-auth"]
+ENTRYPOINT ["/metal-token-rotate"]

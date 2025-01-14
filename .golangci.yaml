@@ -81,7 +81,7 @@ linters-settings:
       - yodaStyleExpr
   goimports:
     # Put local imports after 3rd-party packages.
-    local-prefixes: github.com/ironcore-dev/metal-token-dealer
+    local-prefixes: github.com/ironcore-dev/metal-token-rotate
   gosec:
     excludes:
       # gosec wants us to set a short ReadHeaderTimeout to avoid Slowloris attacks, but doing so would expose us to Keep-Alive race conditions (see https://iximiuz.com/en/posts/reverse-proxy-http-keep-alive-and-502s/)

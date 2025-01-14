@@ -33,7 +33,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/ironcore-dev/metal-token-dealer/controllers"
+	"github.com/ironcore-dev/metal-token-rotate/controllers"
 )
 
 func TestControllers(t *testing.T) {

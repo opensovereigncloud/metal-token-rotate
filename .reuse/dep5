@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: metal-token-dealer
+Upstream-Name: metal-token-rotate
 Upstream-Contact: IronCore authors <ospo@sap.com>
-Source: <https://github.com/ironcore-dev/metal-token-dealer>
+Source: <https://github.com/ironcore-dev/metal-token-rotate>
 Disclaimer: The code in this project may include calls to APIs ("API Calls") of
  SAP or third-party products or services developed outside of this project
  ("External Products").

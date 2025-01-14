@@ -33,7 +33,7 @@ import (
 	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/ironcore-dev/metal-token-dealer/controllers"
+	"github.com/ironcore-dev/metal-token-rotate/controllers"
 )
 
 var (

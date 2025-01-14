@@ -34,10 +34,10 @@ GO_TESTENV =
 GO_BUILDENV =
 TESTBIN=$(shell pwd)/testbin
 
-build-all: build/metal-token-dealer
+build-all: build/metal-token-rotate
 
-build/metal-token-dealer: FORCE generate
-	@env $(GO_BUILDENV) go build $(GO_BUILDFLAGS) -ldflags '-s -w $(GO_LDFLAGS)' -o build/metal-token-dealer .
+build/metal-token-rotate: FORCE generate
+	@env $(GO_BUILDENV) go build $(GO_BUILDFLAGS) -ldflags '-s -w $(GO_LDFLAGS)' -o build/metal-token-rotate .
 
 DESTDIR =
 ifeq ($(shell uname -s),Darwin)
@@ -46,9 +46,9 @@ else
 	PREFIX = /usr
 endif
 
-install: FORCE build/metal-token-dealer
+install: FORCE build/metal-token-rotate
 	install -d -m 0755 "$(DESTDIR)$(PREFIX)/bin"
-	install -m 0755 build/metal-token-dealer "$(DESTDIR)$(PREFIX)/bin/metal-token-dealer"
+	install -m 0755 build/metal-token-rotate "$(DESTDIR)$(PREFIX)/bin/metal-token-rotate"
 
 # which packages to test with test runner
 GO_TESTPKGS := $(shell go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.Dir}}{{end}}' ./...)
@@ -67,7 +67,7 @@ check: FORCE static-check build/cover.html build-all
 
 generate: install-controller-gen
 	@printf "\e[1;36m>> controller-gen\e[0m\n"
-	@controller-gen crd rbac:roleName=metal-token-dealer paths="./..." output:crd:artifacts:config=crd
+	@controller-gen crd rbac:roleName=metal-token-rotate paths="./..." output:crd:artifacts:config=crd
 	@controller-gen object paths=./...
 
 run-golangci-lint: FORCE prepare-static-check
@@ -133,7 +133,7 @@ help: FORCE
 	@printf "\n"
 	@printf "\e[1mBuild\e[0m\n"
 	@printf "  \e[36mbuild-all\e[0m                  Build all binaries.\n"
-	@printf "  \e[36mbuild/metal-token-dealer\e[0m   Build metal-token-dealer.\n"
+	@printf "  \e[36mbuild/metal-token-rotate\e[0m   Build metal-token-rotate.\n"
 	@printf "  \e[36minstall\e[0m                    Install all binaries. This option understands the conventional 'DESTDIR' and 'PREFIX' environment variables for choosing install locations.\n"
 	@printf "\n"
 	@printf "\e[1mTest\e[0m\n"

@@ -1,4 +1,4 @@
-# metal-token-dealer
+# metal-token-rotate
 
 ## About this project
 
@@ -6,8 +6,8 @@ Delivers tokens for metal-operator into Gardener.
 
 ## Support, Feedback, Contributing
 
-This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/ironcore-dev/metal-token-dealer/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](CONTRIBUTING.md).
+This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/ironcore-dev/metal-token-rotate/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](CONTRIBUTING.md).
 
 ## Licensing
 
-Copyright 2024 SAP SE or an SAP affiliate company and IronCore contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/ironcore-dev/metal-token-dealer).
+Copyright 2024 SAP SE or an SAP affiliate company and IronCore contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/ironcore-dev/metal-token-rotate).
