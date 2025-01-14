@@ -1,5 +1,11 @@
 # metal-token-rotate
 
+[![REUSE status](https://api.reuse.software/badge/github.com/ironcore-dev/metal-token-rotate)](https://api.reuse.software/info/github.com/ironcore-dev/metal-token-rotate)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ironcore-dev/metal-token-rotate)](https://goreportcard.com/report/github.com/ironcore-dev/metal-token-rotate)
+[![GitHub License](https://img.shields.io/static/v1?label=License&message=Apache-2.0&color=blue)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://makeapullrequest.com)
+
+
 ## About this project
 
 Delivers tokens for metal-operator into Gardener.
