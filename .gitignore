@@ -18,3 +18,4 @@ testbin/
 .vscode
 
 .DS_Store
+.idea/
