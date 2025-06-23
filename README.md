@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2025 SAP SE or an SAP affiliate company
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # metal-token-rotate
 
 [![REUSE status](https://api.reuse.software/badge/github.com/ironcore-dev/metal-token-rotate)](https://api.reuse.software/info/github.com/ironcore-dev/metal-token-rotate)

@@ -1,16 +1,5 @@
-// Copyright 2024 SAP SE
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company
+// SPDX-License-Identifier: Apache-2.0
 
 package main
 
@@ -19,11 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -46,16 +33,12 @@ func init() {
 }
 
 func main() {
-	var (
-		kubecontext  string
-		targetSecret string
-	)
+	var kubecontext string
 	opts := zap.Options{
 		Development: true,
 		TimeEncoder: zapcore.ISO8601TimeEncoder,
 	}
 	flag.StringVar(&kubecontext, "kubecontext", "", "The context to use from the kubeconfig (defaults to current-context)")
-	flag.StringVar(&targetSecret, "targetSecret", "", "Secret to retrieve the target kubeconfig from (namespace/name), if empty run against the local cluster")
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -84,22 +67,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	var metalSecret *types.NamespacedName
-	if targetSecret != "" {
-		parts := strings.Split(targetSecret, "/")
-		if len(parts) != 2 {
-			setupLog.Info("invalid target secret", "value", targetSecret)
-			os.Exit(1)
-		}
-		metalSecret = &types.NamespacedName{Namespace: parts[0], Name: parts[1]}
-	}
-
 	secretController := controllers.SecretReconciler{
-		TargetKubeCfgSecret: metalSecret,
-		GardenClient:        mgr.GetClient(),
-		LocalClient:         localClient,
-		Log:                 ctrl.Log.WithName("controllers").WithName("secret"),
-		ConfigPath:          controllers.DefaultConfigPath,
+		GardenClient: mgr.GetClient(),
+		LocalClient:  localClient,
+		Log:          ctrl.Log.WithName("controllers").WithName("secret"),
+		ConfigPath:   controllers.DefaultConfigPath,
 	}
 	if err = secretController.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Secret")

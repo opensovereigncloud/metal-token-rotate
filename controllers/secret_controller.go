@@ -1,16 +1,5 @@
-// Copyright 2024 SAP SE
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company
+// SPDX-License-Identifier: Apache-2.0
 
 package controllers
 
@@ -38,11 +27,10 @@ var Now = time.Now
 const AutoprovisonAnnotationKey = "metal.ironcore.dev/autoprovision"
 
 type SecretReconciler struct {
-	GardenClient        client.Client
-	LocalClient         client.Client
-	Log                 logr.Logger
-	ConfigPath          string
-	TargetKubeCfgSecret *types.NamespacedName
+	GardenClient client.Client
+	LocalClient  client.Client
+	Log          logr.Logger
+	ConfigPath   string
 }
 
 func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -57,28 +45,6 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		log.Error(err, "unable to fetch Secret")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	metalClient := r.LocalClient
-	if r.TargetKubeCfgSecret != nil {
-		metalClient, err = makeTargetClient(ctx, r.LocalClient, *r.TargetKubeCfgSecret)
-		if err != nil {
-			log.Error(err, "failed to create metal cluster client")
-			return ctrl.Result{}, err
-		}
-	}
-	return r.reconcileInternal(ctx, &secret, ReconcileParams{
-		config:      &config,
-		metalClient: metalClient,
-	})
-}
-
-type ReconcileParams struct {
-	config      *Config
-	metalClient client.Client
-}
-
-func (r *SecretReconciler) reconcileInternal(ctx context.Context, secret *corev1.Secret, params ReconcileParams) (ctrl.Result, error) {
-	log := r.Log.WithValues("name", secret.Name, "namespace", secret.Namespace)
-	unmodifiedSecret := secret.DeepCopy()
 	autoprovisionValue, ok := secret.Annotations[AutoprovisonAnnotationKey]
 	if !ok {
 		log.Info("skkipping secret without autoprovision annotation")
@@ -89,10 +55,46 @@ func (r *SecretReconciler) reconcileInternal(ctx context.Context, secret *corev1
 		log.Info("skipping secret with invalid autoprovision annotation", "error", err)
 		return ctrl.Result{}, nil
 	}
-	if target.identity != params.config.Identity {
-		log.Info("skipping secret with different identity", "expected", params.config.Identity, "actual", target.identity)
+	// Find the config for the target identity
+	var cfgCluster ClusterConfig
+	for _, c := range config.Clusters {
+		if c.Identity == target.identity {
+			log.Info("found matching config for target identity", "identity", target.identity)
+			cfgCluster = c
+			break
+		}
+	}
+	if cfgCluster.Identity == "" {
+		log.Info("skipping secret without matching config for target identity", "identity", target.identity)
 		return ctrl.Result{}, nil
 	}
+	metalClient := r.LocalClient
+	if cfgCluster.TargetSecretName != "" && cfgCluster.TargetSecretNamespace != "" {
+		metalClient, err = makeTargetClient(ctx, r.LocalClient, types.NamespacedName{
+			Name:      cfgCluster.TargetSecretName,
+			Namespace: cfgCluster.TargetSecretNamespace,
+		})
+		if err != nil {
+			log.Error(err, "failed to create metal cluster client")
+			return ctrl.Result{}, err
+		}
+	}
+	return r.reconcileInternal(ctx, &secret, ReconcileParams{
+		config:          &cfgCluster,
+		metalClient:     metalClient,
+		targetNamespace: target.namespace,
+	})
+}
+
+type ReconcileParams struct {
+	config          *ClusterConfig
+	metalClient     client.Client
+	targetNamespace string
+}
+
+func (r *SecretReconciler) reconcileInternal(ctx context.Context, secret *corev1.Secret, params ReconcileParams) (ctrl.Result, error) {
+	log := r.Log.WithValues("name", secret.Name, "namespace", secret.Namespace)
+	unmodifiedSecret := secret.DeepCopy()
 	if secret.Data == nil {
 		secret.Data = make(map[string][]byte)
 	}
@@ -112,7 +114,7 @@ func (r *SecretReconciler) reconcileInternal(ctx context.Context, secret *corev1
 	}
 	secret.Data["token"] = []byte(token)
 	secret.Data["username"] = []byte(params.config.ServiceAccountName)
-	secret.Data["namespace"] = []byte(target.namespace)
+	secret.Data["namespace"] = []byte(params.targetNamespace)
 	err = r.GardenClient.Patch(ctx, secret, client.MergeFrom(unmodifiedSecret))
 	if err != nil {
 		log.Error(err, "unable to patch Secret")
