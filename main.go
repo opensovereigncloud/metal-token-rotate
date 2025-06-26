@@ -100,8 +100,8 @@ func getKubeconfigOrDie(kubecontext string) *rest.Config {
 
 func gardenClusterConfig(apiAddress string) (*rest.Config, error) {
 	const (
-		tokenFile  = "/var/run/garden/token/token" //nolint:gosec
-		rootCAFile = "/var/run/garden/ca/bundle.crt"
+		tokenFile  = "/var/run/garden/auth/token" //nolint:gosec
+		rootCAFile = "/var/run/garden/auth/bundle.crt"
 	)
 
 	if apiAddress == "" {
